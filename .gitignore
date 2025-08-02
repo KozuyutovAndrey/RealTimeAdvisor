@@ -1,4 +1,5 @@
 .advisor
 *.json
 test_mistral.py
+__pycache__
 
