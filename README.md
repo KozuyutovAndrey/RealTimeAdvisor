@@ -53,5 +53,5 @@ If the installation fails:
 5. Reboot again.
 
 3. Make a wiretap on CABLE-A:
-![alt text](image.png)
+![alt text](images\image.png)
 
