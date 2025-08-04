@@ -27,8 +27,31 @@ A lightweight Windows application that displays a semi-transparent “floating�
 
 ## ⚙️ Installation & Usage
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/KozuyutovAndrey/RealTimeAdvisor.git
-   cd RealTimeAdvisor
+### 1. Clone the repository
+```bash
+git clone https://github.com/KozuyutovAndrey/RealTimeAdvisor.git
+cd RealTimeAdvisor
+```
    
+### 2. Install Virtual Audio Cable
+Run `RealTimeAdvisor/Virtual Audio Cable A & B/VBCABLE_A_Driver_Pack43/VBCABLE_Setup_x64.exe` as administrator.
+
+If the installation fails:
+
+1. Disable mandatory driver signature enforcement (Test Mode):
+
+   Open Command Prompt as administrator and run:
+   ```cmd
+   bcdedit /set testsigning on
+   ```
+2. Reboot the machine. You will see “Test Mode” displayed in the bottom-right corner of the desktop.  
+3. Repeat the installation: run `VBCABLE_Setup_x64.exe` → Install Driver.  
+4. If installation succeeds, disable Test Mode:
+   ```cmd
+   bcdedit /set testsigning off
+   ```
+5. Reboot again.
+
+3. Make a wiretap on CABLE-A:
+![alt text](image.png)
+
