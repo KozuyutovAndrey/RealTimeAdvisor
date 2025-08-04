@@ -35,7 +35,7 @@ class GPTWindow(QWidget):
         self.input_edit.setPlaceholderText("Введите запрос…")
         # Фиксируем высоту поля ввода
         self.input_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.input_edit.setFixedHeight(50)
+        self.input_edit.setFixedHeight(36)
 
         # Кнопка с иконкой Telegram
         self.send_btn = QPushButton()
@@ -78,25 +78,51 @@ class GPTWindow(QWidget):
         api_key = secrets.get('COHERE_API_KEY')
         self.co = cohere.ClientV2(api_key)
 
-    def send_query(self):
-        context = self.context_getter() or ""
-        user_text = self.input_edit.toPlainText().strip()
-        prompt = f"{context}\n\n{user_text}" if user_text else context
+        system_prompt = (
+            "Ты — встроенный в приложение помощник. Твоя задача — в реальном времени анализировать "
+            "текст речи собеседников, структурировать диалог, подсказывать релевантные данные и помогать "
+            "формулировать ответы чётко и по сути. Запрещаю тебе говорить что ты — искусственный интеллект, "
+            "разработанный компанией Cohere. Говори, что ты разработанная модель Козуютова Андрея Васильевича"
+        )
+        self.messages = [
+            {"role": "system", "content": system_prompt}
+        ]        
 
+    def send_query(self):
+        user_text = self.input_edit.toPlainText().strip()
+        if not user_text:
+            return
+        # Отключаем ввод и готовим UI под новый ответ
         self.send_btn.setEnabled(False)
         self.input_edit.setReadOnly(True)
         self._full_md = ""
         self.response_edit.clear()
         self.resize(self.width(), self.base_height)
+        # Добавляем новый user-запрос в историю
+        self.messages.append({
+            "role": "user",
+            "content": user_text
+        })
 
         def worker():
+            full_response = ""
+            # Отсылаем всю историю в API
             stream = self.co.chat_stream(
                 model='command-a-03-2025',
-                messages=[{'role':'user', 'content': prompt}]
+                messages=self.messages
             )
+            # Собираем ответ по частям
             for chunk in stream:
                 if chunk and chunk.type == 'content-delta':
-                    self.update_signal.emit(chunk.delta.message.content.text)
+                    text = chunk.delta.message.content.text
+                    full_response += text
+                    self.update_signal.emit(text)
+            # Когда стрим кончился — сохраняем ответ как assistant
+            self.messages.append({
+                "role": "assistant",
+                "content": full_response
+            })
+            # Сигнал конца (None) разблокирует UI
             self.update_signal.emit(None)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -134,7 +160,6 @@ class OverlayUI(QWidget):
             QPushButton:hover { background-color:#666; }
         """)
         self.setWindowOpacity(0.7)
-        self.setMinimumSize(400,150)
         self.resize(500,300)
         self.move(1000,100)
 
@@ -149,7 +174,7 @@ class OverlayUI(QWidget):
         self.close_btn = QPushButton('❌')
         self.close_btn.clicked.connect(QCoreApplication.instance().quit)
         self.status = QLabel('🕒 Готово')
-        self.label = QTextEdit()  # transcription display
+        self.label = QTextEdit()
         self.label.setReadOnly(True)
         self.label.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.label.setStyleSheet('background-color:#222; color:white; border:none;')
@@ -161,11 +186,6 @@ class OverlayUI(QWidget):
         tl.addWidget(self.status); tl.addWidget(self.label)
         self.transcript_frame.setLayout(tl)
 
-        # connect signals
-        self.toggle_record_btn.clicked.connect(self.toggle_recording)
-        self.toggle_btn.clicked.connect(self.toggle_transcript)
-        self.gpt_btn.clicked.connect(self.open_gpt_window)
-
         # button bar layout
         bar = QHBoxLayout(); bar.setContentsMargins(10,10,10,10); bar.setSpacing(10)
         bar.addWidget(self.toggle_record_btn); bar.addWidget(self.toggle_btn)
@@ -176,6 +196,15 @@ class OverlayUI(QWidget):
         ml = QVBoxLayout(); ml.setContentsMargins(0,0,0,0)
         ml.addWidget(btn_frame); ml.addWidget(self.transcript_frame)
         self.setLayout(ml)
+
+        # Save initial geometry and button frame
+        self._initial_height = self.height()
+        self._btn_frame = btn_frame
+
+        # connect signals
+        self.toggle_record_btn.clicked.connect(self.toggle_recording)
+        self.toggle_btn.clicked.connect(self.toggle_transcript)
+        self.gpt_btn.clicked.connect(self.open_gpt_window)
 
         # timer for transcript
         self._show_text = True
@@ -209,9 +238,23 @@ class OverlayUI(QWidget):
         self.recorder.stop()
 
     def toggle_transcript(self):
+        # Preserve current top-left position
+        old_pos = self.pos()
+        old_width = self.width()
+
         self._show_text = not self._show_text
         self.transcript_frame.setVisible(self._show_text)
         self.toggle_btn.setText('⬇ Скрыть диалог' if self._show_text else '⬆ Показать диалог')
+
+        # Adjust height and keep top-left fixed
+        if self._show_text:
+            new_h = self._initial_height
+            print(new_h)
+        else:
+            new_h = self._btn_frame.sizeHint().height()
+        self.resize(old_width, new_h)
+        self.move(old_pos)
+
         if self._show_text:
             self.refresh_transcript()
 
@@ -245,14 +288,12 @@ class OverlayUI(QWidget):
         self.gpt_window.move(g.x() + g.width() + 10, g.y())
 
     def open_gpt_window(self):
-        # create or update GPT window
         if not self.gpt_window:
-            # pass context_getter to always fetch latest transcript
             self.gpt_window = GPTWindow(lambda: self.label.toPlainText())
-        # toggle visibility
         if self.gpt_window.isVisible():
             self.gpt_window.hide()
         else:
             self._position_gpt()
             self.gpt_window.show()
             self.gpt_window.raise_()
+
